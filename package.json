@@ -1,8 +1,7 @@
 {
   "name": "voebbot",
-  "version": "0.10.0",
+  "version": "0.16.0",
   "description": "VÖBBot removes paywalls of German media sites",
-  "dependencies": {},
   "devDependencies": {
     "eslint": "^7.22.0",
     "eslint-config-standard": "^16.0.2",
@@ -14,7 +13,8 @@
   "scripts": {
     "start": "rollup -c -w",
     "build": "rollup -c",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "version": "gsed -i '4s/\"version\": \".*\",/\"version\": \"'\"$(jq -r .version package.json)\"'\",/' manifest.json && git add manifest.json"
   },
   "repository": {
     "type": "git",

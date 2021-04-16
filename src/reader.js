@@ -1,17 +1,16 @@
 import { increaseStats } from './stats.js'
-import { INIT_MESSAGE, SUCCES_MESSAGE, FAILED_MESSAGE, STATUS_MESSAGE, DEFAULT_PROVIDER } from './const.js'
+import { INIT_MESSAGE, GOTOTAB_MESSAGE, SUCCES_MESSAGE, FAILED_MESSAGE, STATUS_MESSAGE, DEFAULT_PROVIDER } from './const.js'
 import SourceBot from './sourcebot.js'
 
 const storageItems = {}
 
 function retrieveStorage () {
   const defaults = {
-    username: '',
-    password: '',
     keepStats: true,
-    provider: DEFAULT_PROVIDER
+    provider: DEFAULT_PROVIDER,
+    providerOptions: {}
   }
-  browser.storage.sync.get(defaults).then(function (items) {
+  return browser.storage.sync.get(defaults).then(function (items) {
     for (const key in items) {
       storageItems[key] = items[key]
     }
@@ -32,14 +31,20 @@ class Reader {
   }
 
   start () {
-    retrieveStorage()
+    this.storageUpdated = retrieveStorage()
     this.port.onMessage.addListener(this.onMessage)
     this.port.onDisconnect.addListener(this.onDisconnect)
   }
 
   onMessage (message) {
     if (message.type === INIT_MESSAGE) {
-      this.setupArticle(message)
+      this.storageUpdated.then(() => {
+        this.retrieveArticle(message)
+      })
+    } else if (message.type === GOTOTAB_MESSAGE) {
+      if (this.sourceBot) {
+        this.sourceBot.activateTab()
+      }
     }
   }
 
@@ -56,7 +61,7 @@ class Reader {
     }
   }
 
-  setupArticle (message) {
+  retrieveArticle (message) {
     this.sourceId = message.source
     this.domain = message.domain
     this.sourceBot = new SourceBot(
@@ -70,40 +75,37 @@ class Reader {
     this.sourceBot.run()
   }
 
-  botCallback ({ type, message }) {
-    if (type === STATUS_MESSAGE) {
-      this.sendStatusMessage(message)
-    } else if (type === FAILED_MESSAGE) {
-      this.fail(message)
-    } else if (type === SUCCES_MESSAGE) {
-      this.success(message)
+  botCallback (event) {
+    if (event.type === STATUS_MESSAGE) {
+      this.sendStatusMessage(event)
+    } else if (event.type === FAILED_MESSAGE) {
+      this.fail(event)
+    } else if (event.type === SUCCES_MESSAGE) {
+      this.success(event)
     } else {
       this.cleanUp()
       throw new Error('Unknown type')
     }
   }
 
-  sendStatusMessage (text) {
-    this.postMessage({
-      type: STATUS_MESSAGE,
-      text: text
-    })
+  sendStatusMessage (event) {
+    this.postMessage(event)
   }
 
-  success (text) {
+  success (event) {
     if (storageItems.keepStats) {
       increaseStats(this.domain)
     }
     this.postMessage({
       type: SUCCES_MESSAGE,
-      content: text
+      content: event.message
     })
   }
 
-  fail (message) {
+  fail (event) {
     this.postMessage({
       type: FAILED_MESSAGE,
-      content: message
+      content: event.message
     })
     this.cleanUp()
   }

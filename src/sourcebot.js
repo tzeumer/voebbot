@@ -1,6 +1,6 @@
-import converters from './converters.js'
 import providers from './providers.js'
 import sources from './sources.js'
+import TabRunner from './tabrunner.js'
 import { SUCCES_MESSAGE, FAILED_MESSAGE, STATUS_MESSAGE } from './const.js'
 import { interpolate } from './utils.js'
 
@@ -8,7 +8,7 @@ const PHASE_LOGIN = 'login'
 const PHASE_SEARCH = 'search'
 
 class SourceBot {
-  constructor (sourceId, providerId, params, articleInfo, userData, callback) {
+  constructor (sourceId, providerId, sourceParams, articleInfo, userData, callback) {
     this.step = 0
     this.phase = PHASE_LOGIN
 
@@ -18,7 +18,7 @@ class SourceBot {
     this.providerId = providerId
     this.provider = providers[providerId]
 
-    this.params = params
+    this.sourceParams = sourceParams
     this.articleInfo = articleInfo
     this.userData = userData
     this.callback = callback
@@ -26,19 +26,30 @@ class SourceBot {
     this.onTabUpdated = this.onTabUpdated.bind(this)
   }
 
-  async run () {
-    const url = interpolate(
-      this.source.start,
+  getParams () {
+    return Object.assign(
+      {},
+      this.source.defaultParams || {},
       this.provider.params[this.sourceId],
-      'provider', encodeURIComponent
+      this.sourceParams
     )
+  }
+
+  async run () {
+    const url = this.makeUrl(this.source.start)
     const tab = await browser.tabs.create({
       url: url,
       active: false
     })
     this.tabId = tab.id
     console.log('tab created', tab.id)
-
+    const userData = Object.assign({}, this.userData);
+    ['options.username', 'options.password'].forEach(key => {
+      if (userData.providerOptions[`${this.providerId}.${key}`] !== undefined) {
+        userData[key] = userData.providerOptions[`${this.providerId}.${key}`]
+      }
+    })
+    this.tabRunner = new TabRunner(tab.id, userData)
     browser.tabs.onUpdated.addListener(this.onTabUpdated)
   }
 
@@ -80,14 +91,11 @@ class SourceBot {
     return false
   }
 
-  getActionList () {
-    const actionList = this.source[this.phase]
+  getActions () {
+    const actionList = this.provider[this.phase] || this.source[this.phase]
     const actions = actionList[this.step]
     if (Array.isArray(actions)) {
       return actions
-    }
-    if (actions.provider) {
-      return this.provider[actions.provider]
     }
     throw new Error('Unknown action in source')
   }
@@ -95,22 +103,45 @@ class SourceBot {
   isFinalStep () {
     return (
       this.phase === PHASE_SEARCH &&
-      this.step === this.source[this.phase][this.step].length - 1
+      this.step === this.source[this.phase].length - 1
     )
   }
 
+  handleAction (action) {
+    if (action.message) {
+      // message does not need to run through tabrunner
+      this.callback({
+        type: STATUS_MESSAGE,
+        message: action.message
+      })
+      return null
+    }
+    if (action.url) {
+      // recreate action.url with interpolated url
+      action = Object.assign({}, action)
+      action.url = this.makeUrl(action.url)
+    }
+    return action
+  }
+
   async runActionsOfCurrentStep () {
-    const actions = this.getActionList()
+    const actions = this.getActions()
 
     let result
-    for (const action of actions) {
-      console.log('Running', action)
-      const actionCode = this.getActionCode(action)
+    for (let action of actions) {
+      action = this.handleAction(action)
+      if (action === null) { continue }
       try {
-        result = await this.runScript(actionCode)
+        result = await this.tabRunner.runAction(action)
       } catch (e) {
         this.fail(e.toString())
         return
+      }
+      if (typeof result === 'function') {
+        if (!result(this)) {
+          this.cleanUp()
+          return
+        }
       }
     }
     const isFinalStep = this.isFinalStep()
@@ -144,6 +175,7 @@ class SourceBot {
   }
 
   fail (message) {
+    console.error(message)
     this.callback({
       type: FAILED_MESSAGE,
       message: message
@@ -151,73 +183,17 @@ class SourceBot {
     this.cleanUp()
   }
 
-  async runScript (actionCode) {
-    if (actionCode.length === 0) {
-      return
-    }
-    let result = await browser.tabs.executeScript(
-      this.tabId, {
-        code: actionCode[0]
-      })
-    result = result[0]
-    if (actionCode.length === 1) {
-      return result
-    }
-    return actionCode[1](result)
-  }
-
-  getActionCode (action) {
-    if (action.message) {
-      this.callback({
-        type: STATUS_MESSAGE,
-        message: action.message
-      })
-      return []
-    } else if (action.fill) {
-      if (this.userData[action.fill.key]) {
-        return [`document.querySelector('${action.fill.selector}').value = '${this.userData[action.fill.key]}'`]
-      } else {
-        return []
-      }
-    } else if (action.failOnMissing) {
-      return [
-        `document.querySelector('${action.failOnMissing}') !== null`,
-        function (result) {
-          if (result === true) {
-            return result
-          }
-          throw new Error(action.failure)
-        }
-      ]
-    } else if (action.click) {
-      if (action.optional) {
-        return [`var el = document.querySelector('${action.click}'); el && el.click()`]
-      } else {
-        return [`document.querySelector('${action.click}').click()`]
-      }
-    } else if (action.url) {
-      const url = this.makeUrl(action.url)
-      return [`document.location.href = '${url}';`]
-    } else if (action.extract) {
-      return [
-        `Array.from(document.querySelectorAll('${action.extract}')).map(function(el) {
-          return el.outerHTML
-        })`,
-        function (result) {
-          if (result.length > 0 && action.convert) {
-            result = converters[action.convert](result)
-          }
-          return result
-        }]
-    }
-  }
-
   makeUrl (url) {
     url = interpolate(url, this.articleInfo, '', encodeURIComponent)
-    if (this.params) {
-      url = interpolate(url, this.params, 'source', encodeURIComponent)
-    }
+    const params = this.getParams()
+    url = interpolate(url, params, 'source', encodeURIComponent)
     return url
+  }
+
+  activateTab () {
+    browser.tabs.update(this.tabId, {
+      active: true
+    })
   }
 }
 

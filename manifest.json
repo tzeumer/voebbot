@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "VÖBBot",
-  "version": "0.10",
-  "description": "Entfernt die Paywall in Artikeln deutscher Online-Medien via VÖBB",
+  "version": "0.16.0",
+  "description": "Vereinfacht die Suche nach Artikeln in der Bibliothek",
   "icons": {
     "48": "icons/voebbot48.png",
     "96": "icons/voebbot96.png"
@@ -11,9 +11,12 @@
   "permissions": [
     "tabs",
     "storage",
+    "https://*.genios.de/*"
+  ],
+  "optional_permissions": [
     "https://www.munzinger.de/*",
     "https://www.voebb.de/*",
-    "https://bib-voebb.genios.de/*"
+    "https://www.wiso-net.de/*"
   ],
   "background": {
     "scripts": [
@@ -39,7 +42,9 @@
         "https://www.abendblatt.de/*",
         "https://www.moz.de/*",
         "https://www.noz.de/*",
-        "https://www.waz.de/*"
+        "https://www.waz.de/*",
+        "https://www.heise.de/*",
+        "https://www.maz-online.de/*"
       ],
       "js": [
         "lib/browser-polyfill.js",

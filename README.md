@@ -2,20 +2,37 @@
 
 [Official website](https://stefanw.github.io/voebbot/)
 
-## Summary in English
+## Development
 
-Browser extension that uses your [VÖBB](https://www.voebb.de/) public library account (just 10 € / year!) to remove the paywall on print articles of German online news sites.
+This uses rollup to build the extension files. Install and run like this:
 
-### How it works
+```sh
+npm install
 
-Your VÖBB account includes access to [genios](https://www.genios.de/) and [Munzinger](https://www.munzinger.de/) which gives you access to the print editions of most German newspapers.
+# Run this during development
+npm start
+```
 
-When you browse the websites of German news sites the extension will detect the paywall and in the background log in to the library service, search for the article and inject the content of the article into the news site.
+## Extension overview
 
-### Setup
+The extension has four different entry points:
 
-This extension is in beta development. You can [download a release](https://stefanw.github.io/voebbot/) and load it in your browser.
+- The content script in `src/content.js` runs on the news article page, communicates with background script
+- the background script in `src/background.js` which opens new tabs, navigates them around and scrapes the content
+- the options page in `src/options.js` is the options page for the extension
+- the popup in `popup/` is opened when the extension icon in the toolbar is clicked
 
-Unless your browser autofills your credentials on the VÖBB partner sites, you can give the extension your 11-digit user id and password via its options page.
+These are the data pieces inside:
 
-Many more sites are possible, please help to add more.
+- `src/providers.js` contains entities that you authenticate against and that grant access
+- `src/sources.js` contains databases that you can get access to through providers
+- `src/sites.js` contains news sites, how to extract their meta data and which source could provide access
+
+Additionally user data like credentials and chosen provider is stored via `browser.storage.sync`.
+
+
+## Release
+
+1. Run `npm version <major|minor|patch>`
+2. `git push --tags origin main`
+3. GitHub release Action will build, create release, sign Firefox extension, submit to Chrome Web Store and update website.
